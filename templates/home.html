@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fake News Detector</title>
+</head>
+<body>
+    {% if session %}
+        <h1>Welcome {{ session.userinfo.name }}!</h1>
+        <a href="/logout">Logout</a> | <a href="/detector">Detect Fake News</a>
+    {% else %}
+        <h1>Welcome to Fake News Detection App</h1>
+        <a href="/login">Login</a>
+    {% endif %}
+</body>
+</html>
