@@ -5,12 +5,12 @@
   </head>
   <body>
     {% if session %}
-    <h1>Welcome {{session.userinfo.name}}!</h1>
-    <p><a href="/logout" id="qsLogoutBtn">Logout</a></p>
-    <div><pre>{{pretty}}</pre></div>
+      <h1>Hello World</h1>
+      <p>Welcome {{session.userinfo.name}}!</p>
+      <p><a href="/logout" id="qsLogoutBtn">Logout</a></p>
     {% else %}
-    <h1 id="profileDropDown">Welcome Guest</h1>
-    <p><a href="/login" id="qsLoginBtn">Login</a></p>
+      <h1 id="profileDropDown">Welcome Guest</h1>
+      <p><a href="/login" id="qsLoginBtn">Login</a></p>
     {% endif %}
   </body>
 </html>
