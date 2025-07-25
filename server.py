@@ -39,6 +39,7 @@ def callback():
     session['user'] = token['userinfo']
     return redirect('/detector')
 
+
 @app.route('/logout')
 def logout():
     session.clear()
