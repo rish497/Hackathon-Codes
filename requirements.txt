@@ -2,3 +2,10 @@ flask>=2.0.3
 python-dotenv>=0.19.2
 authlib>=1.0
 requests>=2.27.1
+
+# OCR and ML dependencies
+pytesseract>=0.3.10
+pdf2image>=1.16.3
+Pillow>=10.2.0
+scikit-learn>=1.2.2
+pandas>=1.4.2

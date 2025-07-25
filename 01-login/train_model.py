@@ -1,30 +1,27 @@
-# train_model.py
-
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import PassiveAggressiveClassifier
-import pickle
-
-# Load sample dataset (you can swap with real one later)
-df = pd.read_csv("https://raw.githubusercontent.com/saranya97/Fake-News-Detection/main/news.csv")
-
-# Prepare data
-X = df['text'].fillna('')
-y = df['label']
-
-# TF-IDF Vectorizer
-vectorizer = TfidfVectorizer(stop_words='english', max_df=0.7)
-X_vectorized = vectorizer.fit_transform(X)
-
-# Train model
-model = PassiveAggressiveClassifier(max_iter=50)
-model.fit(X_vectorized, y)
-
-# Save model and vectorizer
+from sklearn.pipeline import Pipeline
+import joblib
 import os
-os.makedirs("model", exist_ok=True)
-pickle.dump(model, open("model/fake_news_model.pkl", "wb"))
-pickle.dump(vectorizer, open("model/vectorizer.pkl", "wb"))
 
-print("✅ Model and vectorizer saved.")
+# ✅ USE WORKING LINK
+df = pd.read_csv("https://raw.githubusercontent.com/GeorgeMcIntire/fake_real_news_dataset/main/fake_and_real_news_dataset.csv")
+
+# Basic cleanup
+df = df.dropna(subset=['text', 'label'])
+X = df['text']
+y = df['label'].map({'REAL': 0, 'FAKE': 1})
+
+# Train
+pipeline = Pipeline([
+    ('tfidf', TfidfVectorizer(stop_words='english', max_df=0.7)),
+    ('clf', PassiveAggressiveClassifier(max_iter=50))
+])
+pipeline.fit(X, y)
+
+# Save model
+os.makedirs("model", exist_ok=True)
+joblib.dump(pipeline, "model/fake_news_model.pkl")
+print("✅ Model trained and saved at model/fake_news_model.pkl")
