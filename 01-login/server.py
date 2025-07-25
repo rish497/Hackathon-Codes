@@ -1,7 +1,16 @@
 # server.py
-from flask import Flask, render_template, request, redirect, url_for, session
+import json
+from os import environ as env
+from urllib.parse import quote_plus, urlencode
+
 from authlib.integrations.flask_client import OAuth
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
+
+
+
+from flask import Flask, render_template, request, redirect, url_for, session
+
+
 import os
 import joblib
 from utils.ocr_predictor import extract_text_from_file
@@ -25,25 +34,45 @@ auth0 = oauth.register(
     },
 )
 
-@app.route('/')
+@app.route("/")
 def home():
-    return render_template('home.html')
+    return render_template(
+        "home.html",
+        session=session.get("user"),
+        pretty=json.dumps(session.get("user"), indent=4),
+    )
 
-@app.route('/login')
-def login():
-    return auth0.authorize_redirect(redirect_uri=os.getenv("AUTH0_CALLBACK_URL"))
 
-@app.route('/callback')
+@app.route("/callback", methods=["GET", "POST"])
 def callback():
-    token = auth0.authorize_access_token()
-    session['user'] = token['userinfo']
-    return redirect('/detector')
+    token = oauth.auth0.authorize_access_token()
+    session["user"] = token
+    return redirect("/")
 
 
-@app.route('/logout')
+@app.route("/login")
+def login():
+    return oauth.auth0.authorize_redirect(
+        redirect_uri=url_for("callback", _external=True)
+    )
+
+
+@app.route("/logout")
 def logout():
     session.clear()
-    return redirect('/')
+    return redirect(
+        "https://"
+        + env.get("AUTH0_DOMAIN")
+        + "/v2/logout?"
+        + urlencode(
+            {
+                "returnTo": url_for("home", _external=True),
+                "client_id": env.get("AUTH0_CLIENT_ID"),
+            },
+            quote_via=quote_plus,
+        )
+    )
+
 
 # Load fake news model
 model = joblib.load("model/fake_news_model.pkl")
@@ -66,4 +95,4 @@ def detector():
     return render_template('detector.html', prediction=prediction, text=extracted_text)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=3000)
