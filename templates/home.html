@@ -157,9 +157,9 @@
         input.value = "";
 
         try {
-          const res = await fetch("/chatbot", {
+          const res = await fetch("/chat", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: msg })
           });
           const data = await res.json();
@@ -170,6 +170,7 @@
 
         chat.scrollTop = chat.scrollHeight;
       }
+
     </script>
 
   </body>
