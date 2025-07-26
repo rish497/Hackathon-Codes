@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Prediction Result | Fake News Detector</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 min-h-screen flex items-center justify-center px-4">
+  <div class="bg-white p-10 rounded-2xl shadow-lg max-w-xl w-full text-center">
+    <h1 class="text-3xl font-bold text-blue-700 mb-6">🧠 Prediction Result</h1>
+
+    <p class="text-lg mb-4">
+      The uploaded content is classified as:
+      <span class="font-extrabold text-2xl {% if prediction == 'Fake News' %}text-red-600{% else %}text-green-600{% endif %}">
+        {{ prediction }}
+      </span>
+    </p>
+
+    {% if response %}
+    <div class="bg-gray-50 border border-blue-200 p-4 rounded-lg text-left mt-4 shadow-inner">
+      <h2 class="text-md font-semibold text-blue-700 mb-2">📝 Explanation:</h2>
+      <p class="text-gray-700 text-sm whitespace-pre-line">{{ response }}</p>
+    </div>
+    {% endif %}
+
+    <a href="/" class="inline-block mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition">
+      🔁 Try Another File
+    </a>
+  </div>
+</body>
+</html>

@@ -1,5 +1,10 @@
-flask>=2.0.3
-python-dotenv>=0.19.2
+Flask>=2.0.3
 authlib>=1.0
-requests>=2.27.1
 google-generativeai
+joblib
+pdfminer.six
+Pillow
+python-dotenv>=0.19.2
+pytesseract
+requests>=2.27.1
+scikit-learn
