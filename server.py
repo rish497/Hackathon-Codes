@@ -9,6 +9,11 @@ from authlib.integrations.flask_client import OAuth
 from dotenv import find_dotenv, load_dotenv
 from flask import Flask, redirect, render_template, session, url_for
 
+import google.generativeai as genai
+from flask import request, jsonify
+import os
+
+
 ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
@@ -16,6 +21,16 @@ if ENV_FILE:
 app = Flask(__name__)
 app.secret_key = env.get("APP_SECRET_KEY")
 
+# Load Gemini API key from .env
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("GEMINI_API_KEY not found in .env")
+
+genai.configure(api_key=api_key)
+
+# Load Gemini model
+model = genai.GenerativeModel("gemini-1.5-flash")
+chat_session = model.start_chat(history=[])
 
 oauth = OAuth(app)
 
@@ -69,6 +84,18 @@ def logout():
             quote_via=quote_plus,
         )
     )
+@app.route("/chat", methods=["POST"])
+def chat():
+    user_input = request.json.get("message")
+    if not user_input:
+        return jsonify({"error": "No message provided"}), 400
+
+    try:
+        response = chat_session.send_message(user_input)
+        return jsonify({"response": response.text})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 if __name__ == "__main__":
