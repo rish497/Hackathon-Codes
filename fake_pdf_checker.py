@@ -19,6 +19,12 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from datetime import datetime
 from flask import send_file
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+print("hello WOrld")
+nltk.download('punkt')
+nltk.download('stopwords')
 
 # --- ENV / INIT ---
 ENV_FILE = find_dotenv()
@@ -114,18 +120,70 @@ def fetch_news_articles(query):
             data = response.json()
             return [article['title'] + " " + article.get('description', '') for article in data.get("results", [])]
         else:
+            print(f"❌ News API Error - Status Code: {response.status_code}")
             return []
     except Exception as e:
         print("❌ News API Error:", e)
         return []
 
 def second_check_news_similarity(text):
-    articles = fetch_news_articles(text[:200])  # Use first 200 chars as query
-    for article in articles:
-        sim = SequenceMatcher(None, text.lower(), article.lower()).ratio()
-        if sim > 0.6:
-            return True  # Found similar article
-    return False
+    from nltk import pos_tag, ne_chunk
+    from nltk.tree import Tree
+
+    def extract_keywords(text, max_keywords=10):
+        words = word_tokenize(text)
+        filtered = [w for w in words if w.isalnum() and w.lower() not in stopwords.words('english')]
+        return filtered[:max_keywords]
+
+    def extract_named_entities(text):
+        named_entities = []
+        for chunk in ne_chunk(pos_tag(word_tokenize(text))):
+            if isinstance(chunk, Tree):
+                ne = " ".join(c[0] for c in chunk)
+                named_entities.append(ne)
+        return named_entities
+
+    levels = []
+
+    # Level 1: Top 10 keywords (most specific)
+    keywords = extract_keywords(text, max_keywords=10)
+    levels.append(("Top 10 Keywords", " ".join(keywords)))
+
+    # Level 2: Top 5 keywords (less specific)
+    levels.append(("Top 5 Keywords", " ".join(keywords[:5])))
+
+    # Level 3: Named Entities (even broader)
+    entities = extract_named_entities(text)
+    if entities:
+        levels.append(("Named Entities", " ".join(entities)))
+
+    # Level 4: First line/headline fallback
+    first_line = text.strip().splitlines()[0] if text.strip().splitlines() else text[:100]
+    levels.append(("First Line", first_line))
+
+    # Try each level until we fetch articles
+    for level_name, query in levels:
+        print(f"\n🔎 Trying query level: {level_name}")
+        print(f"🧠 Query: \"{query}\"")
+        articles = fetch_news_articles(query)
+        if articles:
+            print(f"✅ Found {len(articles)} article(s) using {level_name}:\n")
+            for i, article in enumerate(articles, 1):
+                print(f"{i}. 📰 {article[:200]}...\n")
+            # Similarity check
+            for article in articles:
+                sim = SequenceMatcher(None, text.lower(), article.lower()).ratio()
+                if sim > 0.6:
+                    print(f"✅ Similarity Match Found! Ratio: {sim:.2f}")
+                    return True, articles
+            print("❌ No article matched closely enough. Continuing fallback...\n")
+        else:
+            print(f"⚠️ No articles found with query level: {level_name}")
+
+    print("❌ Final Verdict: No matching articles found through any fallback method.")
+    return False, []
+
+
 
 # --- Routes ---
 @app.route("/")
@@ -183,21 +241,31 @@ def detect():
         if not extracted_text:
             return render_template("result.html", prediction="No readable text found.", extracted_text="")
 
-        # ML prediction
         text_vector = vectorizer_model.transform([extracted_text])
         prediction_label = clf.predict(text_vector)[0]
         prediction_result = "Fake News" if prediction_label == 1 else "Real News"
 
-        # 🧠 Second check using NewsData.io
+        # Second check
+        articles = []
         if prediction_result == "Fake News":
-            found_match = second_check_news_similarity(extracted_text)
+            found_match, articles = second_check_news_similarity(extracted_text)
+
+            # DEBUG: Print all fetched articles to terminal
+            print("\n📦 Articles returned from second check:")
+            if articles:
+                for i, article in enumerate(articles, 1):
+                    print(f"{i}. 📰 {article[:200]}...\n")
+            else:
+                print("⚠️ No articles fetched from NewsData.io.")
+
             if found_match:
                 prediction_result = "Real News ✅ (Verified by news data)"
 
         return render_template(
             "result.html",
             prediction=prediction_result,
-            extracted_text=extracted_text
+            extracted_text=extracted_text,
+            articles=articles
         )
 
     flash("Invalid file type.")
@@ -221,17 +289,15 @@ def download_report():
     extracted_text = request.form.get("text", "")
     prediction = request.form.get("prediction", "")
     response = request.form.get("response", "")
+    articles = request.form.get("articles", "").split("|||")
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"news_report_{timestamp}.pdf"
     filepath = os.path.join("static", "reports", filename)
-
     os.makedirs("static/reports", exist_ok=True)
 
     c = canvas.Canvas(filepath, pagesize=letter)
     width, height = letter
-
-    # Title
     c.setFont("Helvetica-Bold", 16)
     c.drawString(50, height - 50, "Fake News Detection Report")
 
@@ -239,7 +305,6 @@ def download_report():
     c.drawString(50, height - 80, f"Timestamp: {timestamp}")
     c.drawString(50, height - 100, f"Prediction: {prediction}")
 
-    # Explanation
     y = height - 130
     if response:
         c.setFont("Helvetica-Bold", 12)
@@ -250,7 +315,20 @@ def download_report():
             c.drawString(60, y, line)
             y -= 15
 
-    # Extracted Text
+    if articles:
+        y -= 30
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, f"News Articles Fetched ({len(articles)}):")
+        y -= 20
+        c.setFont("Helvetica", 9)
+        for article in articles:
+            for line in article.splitlines():
+                if y < 50:
+                    c.showPage()
+                    y = height - 50
+                c.drawString(60, y, line[:100])
+                y -= 12
+
     y -= 30
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, y, "Extracted Text:")
@@ -260,10 +338,11 @@ def download_report():
         if y < 50:
             c.showPage()
             y = height - 50
-        c.drawString(60, y, line[:100])  # Keep lines manageable
+        c.drawString(60, y, line[:100])
         y -= 12
 
     c.save()
     return send_file(filepath, as_attachment=True)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
