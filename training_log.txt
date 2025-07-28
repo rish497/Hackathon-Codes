@@ -1,0 +1,13 @@
+=== New Training Run ===
+Total Samples: 44898
+Accuracy (Overall): 0.9864142538975501
+              precision    recall  f1-score   support
+
+           0       0.98      0.99      0.99      4311
+           1       0.99      0.98      0.99      4669
+
+    accuracy                           0.99      8980
+   macro avg       0.99      0.99      0.99      8980
+weighted avg       0.99      0.99      0.99      8980
+
+----------------------------------------
