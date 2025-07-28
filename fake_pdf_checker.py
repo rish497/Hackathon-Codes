@@ -22,6 +22,9 @@ from flask import send_file
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
+from waitress import serve
+
+
 print("hello WOrld")
 nltk.download('punkt')
 nltk.download('stopwords')
@@ -343,6 +346,8 @@ def download_report():
 
     c.save()
     return send_file(filepath, as_attachment=True)
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
+    from waitress import serve
+    print("🚀 App running at: http://127.0.0.1:3000 or http://localhost:3000")
+    print("✅ Using Waitress (production WSGI server)")
+    serve(app, host="0.0.0.0", port=3000)
