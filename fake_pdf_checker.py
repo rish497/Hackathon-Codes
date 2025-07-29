@@ -23,11 +23,12 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from waitress import serve
+import spacy
+nlp = spacy.load("en_core_web_sm")
 
-
-print("hello WOrld")
-nltk.download('punkt')
-nltk.download('stopwords')
+nltk.download('averaged_perceptron_tagger')
+nltk.download('maxent_ne_chunker')
+nltk.download('words')
 
 # --- ENV / INIT ---
 ENV_FILE = find_dotenv()
@@ -116,7 +117,7 @@ def retrain_model_async():
     threading.Thread(target=retrain).start()
 
 def fetch_news_articles(query):
-    url = f"https://newsdata.io/api/1/news?apikey={NEWSDATA_API_KEY}&q={query}&language=en&category=top"
+    url = f"https://newsdata.io/api/1/news?apikey={NEWSDATA_API_KEY}&q={query}&language=en"
     try:
         response = requests.get(url)
         if response.status_code == 200:
@@ -137,7 +138,10 @@ def second_check_news_similarity(text):
         words = word_tokenize(text)
         filtered = [w for w in words if w.isalnum() and w.lower() not in stopwords.words('english')]
         return filtered[:max_keywords]
-
+    
+    def extract_named_entities(text):
+       doc = nlp(text)
+    return [ent.text for ent in doc.ents]
     def extract_named_entities(text):
         named_entities = []
         for chunk in ne_chunk(pos_tag(word_tokenize(text))):
