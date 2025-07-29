@@ -19,5 +19,5 @@ COPY . .
 # Expose port 3000
 EXPOSE 3000
 
-# Run your app
-CMD ["python", "server.py"]
+# Run your real app file
+CMD ["python", "fake_pdf_checker.py"]
