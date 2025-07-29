@@ -23,8 +23,7 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from waitress import serve
-import spacy
-nlp = spacy.load("en_core_web_sm")
+
 
 nltk.download('averaged_perceptron_tagger')
 nltk.download('maxent_ne_chunker')
@@ -131,24 +130,22 @@ def fetch_news_articles(query):
         return []
 
 def second_check_news_similarity(text):
-    from nltk import pos_tag, ne_chunk
-    from nltk.tree import Tree
+    import spacy
+nlp = spacy.load("en_core_web_sm")
+
+def second_check_news_similarity(text):
+    from nltk.tokenize import word_tokenize
+    from nltk.corpus import stopwords
+    from difflib import SequenceMatcher
 
     def extract_keywords(text, max_keywords=10):
         words = word_tokenize(text)
         filtered = [w for w in words if w.isalnum() and w.lower() not in stopwords.words('english')]
         return filtered[:max_keywords]
-    
+
     def extract_named_entities(text):
-       doc = nlp(text)
-    return [ent.text for ent in doc.ents]
-    def extract_named_entities(text):
-        named_entities = []
-        for chunk in ne_chunk(pos_tag(word_tokenize(text))):
-            if isinstance(chunk, Tree):
-                ne = " ".join(c[0] for c in chunk)
-                named_entities.append(ne)
-        return named_entities
+        doc = nlp(text)
+        return [ent.text for ent in doc.ents]
 
     levels = []
 
