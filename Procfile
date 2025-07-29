@@ -1,1 +1,1 @@
-web: python server.py
+web: waitress-serve --port=$PORT fake_pdf_checker:app

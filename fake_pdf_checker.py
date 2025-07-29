@@ -63,7 +63,7 @@ gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 chat_session = gemini_model.start_chat(history=[])
 
 # --- NEWS API ---
-NEWSDATA_API_KEY = "pub_857237df36ae42f6b66ceb19f1ceff73"
+NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY")
 
 # --- Utils ---
 def allowed_file(filename):
@@ -241,28 +241,34 @@ def detect():
         file.save(filepath)
 
         extracted_text = extract_text(filepath)
-        if not extracted_text:
-            return render_template("result.html", prediction="No readable text found.", extracted_text="")
+        if not extracted_text or not extracted_text.strip():
+            return render_template(
+                "result.html",
+                prediction="❌ No readable text found. Please try another file.",
+                extracted_text=""
+            )
 
-        text_vector = vectorizer_model.transform([extracted_text])
-        prediction_label = clf.predict(text_vector)[0]
-        prediction_result = "Fake News" if prediction_label == 1 else "Real News"
+        try:
+            text_vector = vectorizer_model.transform([extracted_text])
+            prediction_label = clf.predict(text_vector)[0]
+            prediction_result = "Fake News" if prediction_label == 1 else "Real News"
+        except Exception as e:
+            return render_template(
+                "result.html",
+                prediction=f"❌ Error during prediction: {str(e)}",
+                extracted_text=extracted_text
+            )
 
-        # Second check
+        # Optional: Second check (you can comment this out if not needed)
+        found_match = False
         articles = []
         if prediction_result == "Fake News":
-            found_match, articles = second_check_news_similarity(extracted_text)
-
-            # DEBUG: Print all fetched articles to terminal
-            print("\n📦 Articles returned from second check:")
-            if articles:
-                for i, article in enumerate(articles, 1):
-                    print(f"{i}. 📰 {article[:200]}...\n")
-            else:
-                print("⚠️ No articles fetched from NewsData.io.")
-
-            if found_match:
-                prediction_result = "Real News ✅ (Verified by news data)"
+            try:
+                found_match, articles = second_check_news_similarity(extracted_text)
+                if found_match:
+                    prediction_result = "Real News ✅ (Verified by news data)"
+            except Exception as e:
+                print("⚠️ Second check failed:", e)
 
         return render_template(
             "result.html",
@@ -273,6 +279,7 @@ def detect():
 
     flash("Invalid file type.")
     return redirect(url_for("home"))
+
 
 @app.route("/feedback", methods=["POST"])
 def feedback():
