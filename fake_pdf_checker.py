@@ -20,20 +20,28 @@ from reportlab.pdfgen import canvas
 from datetime import datetime
 from flask import send_file
 import nltk
+import spacy
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from waitress import serve
 
-
+# --- NLTK Setup ---
 nltk.download('averaged_perceptron_tagger')
 nltk.download('maxent_ne_chunker')
 nltk.download('words')
+nltk.download('punkt')
+nltk.download('stopwords')
 
-# --- ENV / INIT ---
-ENV_FILE = find_dotenv()
-if ENV_FILE:
-    load_dotenv(ENV_FILE)
+# --- Spacy NLP ---
+nlp = spacy.load("en_core_web_sm")
 
+# --- Gemini Setup ---
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-pro")
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+chat_session = gemini_model.start_chat(history=[])
+
+# --- Flask App Setup ---
 app = Flask(__name__)
 app.secret_key = os.getenv("APP_SECRET_KEY")
 app.config["UPLOAD_FOLDER"] = "static/uploads"
@@ -50,29 +58,42 @@ oauth.register(
     server_metadata_url=f'https://{os.getenv("AUTH0_DOMAIN")}/.well-known/openid-configuration',
 )
 
-# --- Load Model + Vectorizer ---
+# --- Load ML Models ---
 clf = joblib.load("fake_news_model.joblib")
 vectorizer_model = joblib.load("vectorizer.joblib")
 
-# --- Configure Gemini ---
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError("GEMINI_API_KEY not found in .env")
-genai.configure(api_key=api_key)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-chat_session = gemini_model.start_chat(history=[])
-
-# --- NEWS API ---
+# --- NewsData API ---
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY")
 
-# --- Utils ---
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def second_check_with_gemini(text):
+    prompt = f"""
+You are a fact-checking assistant. Given the following news content, answer clearly:
+
+1. Is this news Real or Fake?
+2. What events or facts support your judgment?
+3. Give a short but clear explanation.
+
+Reply in this format:
+
+VERDICT: Real or Fake
+EXPLANATION: <your explanation here>
+
+News Content:
+{text}
+""".strip()
+    try:
+        response = gemini_model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        print("⚠️ Gemini second check failed:", e)
+        return "VERDICT: Unknown\nEXPLANATION: Error during Gemini second check."
 
 def extract_text(file_path):
     ext = file_path.rsplit('.', 1)[1].lower()
     text = ""
-
     if ext == "pdf":
         doc = fitz.open(file_path)
         for page in doc:
@@ -85,8 +106,63 @@ def extract_text(file_path):
     elif ext in ["png", "jpg", "jpeg"]:
         image = Image.open(file_path)
         text = pytesseract.image_to_string(image)
-
     return text.strip()
+
+def fetch_news_articles(query):
+    url = f"https://newsdata.io/api/1/news?apikey={NEWSDATA_API_KEY}&q={query}&language=en"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return [article['title'] + " " + article.get('description', '') for article in data.get("results", [])]
+        else:
+            print(f"❌ News API Error - Status Code: {response.status_code}")
+            return []
+    except Exception as e:
+        print("❌ News API Error:", e)
+        return []
+
+def second_check_news_similarity(text):
+    def extract_keywords(text, max_keywords=10):
+        words = word_tokenize(text)
+        filtered = [w for w in words if w.isalnum() and w.lower() not in stopwords.words('english')]
+        return filtered[:max_keywords]
+
+    def extract_named_entities(text):
+        doc = nlp(text)
+        return [ent.text for ent in doc.ents]
+
+    levels = []
+    keywords = extract_keywords(text, max_keywords=10)
+    levels.append(("Top 10 Keywords", " ".join(keywords)))
+    levels.append(("Top 5 Keywords", " ".join(keywords[:5])))
+
+    entities = extract_named_entities(text)
+    if entities:
+        levels.append(("Named Entities", " ".join(entities)))
+
+    first_line = text.strip().splitlines()[0] if text.strip().splitlines() else text[:100]
+    levels.append(("First Line", first_line))
+
+    for level_name, query in levels:
+        print(f"\n🔎 Trying query level: {level_name}")
+        print(f"🧠 Query: \"{query}\"")
+        articles = fetch_news_articles(query)
+        if articles:
+            print(f"✅ Found {len(articles)} article(s):\n")
+            for i, article in enumerate(articles, 1):
+                print(f"{i}. 📰 {article[:200]}...\n")
+            for article in articles:
+                sim = SequenceMatcher(None, text.lower(), article.lower()).ratio()
+                if sim > 0.6:
+                    print(f"✅ Similarity Match Found! Ratio: {sim:.2f}")
+                    return True, articles
+            print("❌ No article matched closely enough.")
+        else:
+            print(f"⚠️ No articles found with query: {query}")
+
+    print("❌ Final Verdict: No matching articles found.")
+    return False, []
 
 def retrain_model_async():
     def retrain():
@@ -111,83 +187,9 @@ def retrain_model_async():
         joblib.dump(vectorizer, "vectorizer.joblib")
         clf = model
         vectorizer_model = vectorizer
-        print("✅ Model retrained and reloaded from feedback.")
+        print("✅ Model retrained and reloaded.")
 
     threading.Thread(target=retrain).start()
-
-def fetch_news_articles(query):
-    url = f"https://newsdata.io/api/1/news?apikey={NEWSDATA_API_KEY}&q={query}&language=en"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            return [article['title'] + " " + article.get('description', '') for article in data.get("results", [])]
-        else:
-            print(f"❌ News API Error - Status Code: {response.status_code}")
-            return []
-    except Exception as e:
-        print("❌ News API Error:", e)
-        return []
-
-def second_check_news_similarity(text):
-    import spacy
-nlp = spacy.load("en_core_web_sm")
-
-def second_check_news_similarity(text):
-    from nltk.tokenize import word_tokenize
-    from nltk.corpus import stopwords
-    from difflib import SequenceMatcher
-
-    def extract_keywords(text, max_keywords=10):
-        words = word_tokenize(text)
-        filtered = [w for w in words if w.isalnum() and w.lower() not in stopwords.words('english')]
-        return filtered[:max_keywords]
-
-    def extract_named_entities(text):
-        doc = nlp(text)
-        return [ent.text for ent in doc.ents]
-
-    levels = []
-
-    # Level 1: Top 10 keywords (most specific)
-    keywords = extract_keywords(text, max_keywords=10)
-    levels.append(("Top 10 Keywords", " ".join(keywords)))
-
-    # Level 2: Top 5 keywords (less specific)
-    levels.append(("Top 5 Keywords", " ".join(keywords[:5])))
-
-    # Level 3: Named Entities (even broader)
-    entities = extract_named_entities(text)
-    if entities:
-        levels.append(("Named Entities", " ".join(entities)))
-
-    # Level 4: First line/headline fallback
-    first_line = text.strip().splitlines()[0] if text.strip().splitlines() else text[:100]
-    levels.append(("First Line", first_line))
-
-    # Try each level until we fetch articles
-    for level_name, query in levels:
-        print(f"\n🔎 Trying query level: {level_name}")
-        print(f"🧠 Query: \"{query}\"")
-        articles = fetch_news_articles(query)
-        if articles:
-            print(f"✅ Found {len(articles)} article(s) using {level_name}:\n")
-            for i, article in enumerate(articles, 1):
-                print(f"{i}. 📰 {article[:200]}...\n")
-            # Similarity check
-            for article in articles:
-                sim = SequenceMatcher(None, text.lower(), article.lower()).ratio()
-                if sim > 0.6:
-                    print(f"✅ Similarity Match Found! Ratio: {sim:.2f}")
-                    return True, articles
-            print("❌ No article matched closely enough. Continuing fallback...\n")
-        else:
-            print(f"⚠️ No articles found with query level: {level_name}")
-
-    print("❌ Final Verdict: No matching articles found through any fallback method.")
-    return False, []
-
-
 
 # --- Routes ---
 @app.route("/")
@@ -198,7 +200,7 @@ def home():
 def login():
     return oauth.auth0.authorize_redirect(redirect_uri=url_for("callback", _external=True))
 
-@app.route("/callback", methods=["GET", "POST"])
+@app.route("/callback")
 def callback():
     token = oauth.auth0.authorize_access_token()
     session["user"] = token
@@ -245,37 +247,26 @@ def detect():
         if not extracted_text or not extracted_text.strip():
             return render_template(
                 "result.html",
-                prediction="❌ No readable text found. Please try another file.",
-                extracted_text=""
+                prediction="⚠️ No text detected.",
+                extracted_text="",
+                articles=[],
+                response=""
             )
 
+        # ✅ Skip model, go straight to Gemini
         try:
-            text_vector = vectorizer_model.transform([extracted_text])
-            prediction_label = clf.predict(text_vector)[0]
-            prediction_result = "Fake News" if prediction_label == 1 else "Real News"
+            gemini_explanation = second_check_with_gemini(extracted_text)
+            prediction_result = "🟢 Likely Real" if "likely real" in gemini_explanation.lower() else "🔴 Possibly Fake"
         except Exception as e:
-            return render_template(
-                "result.html",
-                prediction=f"❌ Error during prediction: {str(e)}",
-                extracted_text=extracted_text
-            )
-
-        # Optional: Second check (you can comment this out if not needed)
-        found_match = False
-        articles = []
-        if prediction_result == "Fake News":
-            try:
-                found_match, articles = second_check_news_similarity(extracted_text)
-                if found_match:
-                    prediction_result = "Real News ✅ (Verified by news data)"
-            except Exception as e:
-                print("⚠️ Second check failed:", e)
+            gemini_explanation = f"⚠️ Error during Gemini second check."
+            prediction_result = "⚠️ Gemini Error"
 
         return render_template(
             "result.html",
             prediction=prediction_result,
             extracted_text=extracted_text,
-            articles=articles
+            articles=[],  # Optional: remove article fetching if not needed
+            response=gemini_explanation
         )
 
     flash("Invalid file type.")
@@ -291,7 +282,7 @@ def feedback():
     with open("feedback.csv", "a", encoding="utf-8") as f:
         safe_text = text.strip().replace('"', "'").replace("\n", " ")
         f.write(f'"{safe_text}",{label}\n')
-    flash("✅ Thanks! Your feedback was saved and model will learn shortly.")
+    flash("✅ Feedback saved. The model will learn shortly.")
     retrain_model_async()
     return redirect(url_for("home"))
 
@@ -354,6 +345,7 @@ def download_report():
 
     c.save()
     return send_file(filepath, as_attachment=True)
+
 if __name__ == "__main__":
     from waitress import serve
     print("🚀 App running at: http://127.0.0.1:3000 or http://localhost:3000")
